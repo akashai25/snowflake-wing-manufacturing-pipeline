@@ -1,0 +1,298 @@
+-- HISTORICAL DEVELOPMENT WORKSHEET — DO NOT RUN THE WHOLE FILE.
+-- Includes CREATE OR REPLACE DATABASE/TABLE, FORCE=TRUE COPY, DELETE/UPDATE, and task resume.
+-- It is an uncurated record of separately executed experiments, not one end-to-end runnable SQL script.
+-- See README.md and docs/EXECUTION_GUIDE.md before executing any statement.
+-- The preserved original is in the user's private source ZIP; this copy adds safety header only.
+
+CREATE OR REPLACE DATABASE Wing_data_project;
+USE DATABASE wing_data_project;
+
+CREATE OR REPLACE STAGE wing_data_stage;
+
+SHOW STAGES;
+LIST @WING_DATA_STAGE;
+DESCRIBE STAGE WING_DATA_STAGE;
+
+CREATE OR REPLACE TABLE RAW_WING (
+    PLAN_ID VARCHAR,
+    PART_NUM VARCHAR,
+    OP_SEQ INT,
+    TORQUE_VALUE FLOAT,
+    QC_STATUS VARCHAR
+);
+
+CREATE OR REPLACE FILE FORMAT wing_data_file_format
+  TYPE = CSV
+  FIELD_DELIMITER = ','
+  SKIP_HEADER = 1
+  FIELD_OPTIONALLY_ENCLOSED_BY = "'";
+
+  COPY INTO RAW_WING
+  FROM @wing_data_stage
+  files=('wing_data_sample.csv')
+  FILE_FORMAT= (format_name = 'wing_data_file_format')
+  ON_ERROR = 'ABORT_STATEMENT'
+  FORCE= TRUE;
+
+   COPY INTO RAW_WING
+  FROM @wing_data_stage
+  files=('wing_data_sample.csv')
+  FILE_FORMAT= (format_name = 'wing_data_file_format')
+  ON_ERROR = 'ABORT_STATEMENT'
+  FORCE= TRUE
+  VALIDATION_MODE= 'RETURN_ERRORS';
+
+  SELECT * FROM RAW_WING;
+
+select file_name, error_count, status, last_load_time from snowflake.account_usage.copy_history
+  order by last_load_time desc;
+
+
+SELECT table_name, last_load_time
+  FROM information_schema.load_history
+  WHERE schema_name=current_schema() AND
+  table_name='RAW_WING';
+
+SELECT CURRENT_VERSION();
+
+SELECT COUNT(*)
+FROM @wing_data_stage/wing_data_sample.csv (FILE_FORMAT => 'wing_data_file_format');
+
+SHOW STREAMS;
+
+INSERT INTO RAW_WING
+VALUES('PLAN-1546', 'SKIN-C1', 10, 60.2, 'PASS');
+
+SELECT * FROM wing_stream;
+
+UPDATE RAW_WING
+SET TORQUE_VALUE= 50,
+     QC_STATUS= 'PASS'
+WHERE PLAN_ID= 'PLAN-1440';
+
+UPDATE RAW_WING
+SET TORQUE_VALUE= 54.7,
+     QC_STATUS= 'PASS'
+WHERE PLAN_ID= 'PLAN-1038';
+
+DELETE FROM RAW_WING
+WHERE PLAN_ID = 'PLAN-1760';
+
+SHOW TABLES;
+
+SELECT * FROM CLEAN_WING;
+SELECT * FROM CLEAN_WING_T;
+
+SHOW TASKS;
+
+SELECT *
+FROM TABLE(INFORMATION_SCHEMA.TASK_HISTORY(
+                task_name=> 'WING_DATA_TASK'
+));
+
+DELETE FROM CLEAN_WING_T
+WHERE PLAN_ID IN(
+    SELECT PLAN_ID
+    FROM CLEAN_WING_T
+    LIMIT 2
+);
+
+
+
+SELECT * FROM CLEAN_WING
+LEFT JOIN CLEAN_WING_T
+    ON CLEAN_WING.PLAN_ID = CLEAN_WING_T.PLAN_ID;
+
+    -- List A: The original 100 IDs
+SELECT * FROM CLEAN_WING
+EXCEPT
+-- List B: The remaining 85 IDs
+SELECT * FROM CLEAN_WING_T;
+
+
+SELECT PLAN_ID,
+       TORQUE_VALUE,
+       SUM(TORQUE_VALUE) OVER(
+           PARTITION BY PLAN_ID
+       ) AS SUM
+FROM CLEAN_WING
+ORDER BY PLAN_ID, TORQUE_VALUE DESC;
+
+SELECT *
+FROM ( 
+              SELECT PLAN_ID,
+                     TORQUE_VALUE,
+                     ROW_NUMBER() OVER(
+                    PARTITION BY PLAN_ID
+                    ORDER BY TORQUE_VALUE ASC
+                    ) AS R
+            FROM CLEAN_WING
+)T
+WHERE R=1;
+
+
+
+SELECT PLAN_ID,
+        PART_NUM,
+        OP_SEQ,
+        TORQUE_VALUE,
+        QC_STATUS,
+        INGEST_TIME
+FROM CLEAN_WING
+        QUALIFY ROW_NUMBER() OVER(
+            PARTITION BY PLAN_ID
+            ORDER BY INGEST_TIME DESC            
+    )= 1;
+
+
+SELECT * FROM CLEAN_WING;
+SELECT * FROM CLEAN_WING_T;
+
+INSERT INTO CLEAN_WING
+VALUES('PLAN-9999', 'FOD', 9999, 0, 'PASS');
+
+INSERT INTO CLEAN_WING_T
+VALUES('PLAN-9999', 'FOD', 9999, 59.3, 'PASS');
+
+SHOW TASKS;
+ALTER TASK WING_DATA_TASK SUSPEND;
+
+
+CREATE OR REPLACE TASK merge_into_task
+WAREHOUSE = 'COMPUTE_WH'
+SCHEDULE = '1 MINUTE'
+
+AS
+
+MERGE INTO CLEAN_WING_T
+    USING CLEAN_WING
+    ON CLEAN_WING_T.PLAN_ID = CLEAN_WING.PLAN_ID 
+    WHEN MATCHED THEN
+        UPDATE SET CLEAN_WING_T.PART_NUM = CLEAN_WING.PART_NUM,
+                   CLEAN_WING_T.OP_SEQ = CLEAN_WING.OP_SEQ,
+                   CLEAN_WING_T.TORQUE_VALUE = CLEAN_WING.TORQUE_VALUE,
+                   CLEAN_WING_T.QC_STATUS = CLEAN_WING.QC_STATUS
+    WHEN NOT MATCHED THEN
+        INSERT (PLAN_ID, PART_NUM, OP_SEQ, TORQUE_VALUE, QC_STATUS)
+        VALUES (PLAN_ID, PART_NUM, OP_SEQ, TORQUE_VALUE, QC_STATUS);
+
+ALTER TASK merge_into_task RESUME;
+
+SHOW STAGES;
+
+SHOW FILE FORMATS;
+
+COPY INTO RAW_WING
+FROM @wing_data_stage
+files= ('wing_data_corrupted.csv')
+file_format= (format_name = 'WING_DATA_FILE_FORMAT')
+ON_ERROR= 'CONTINUE' 
+FORCE=TRUE;
+
+SELECT COUNT(*) FROM RAW_WING;
+
+SELECT COUNT(*)
+FROM @wing_data_stage/wing_data_corrupted.csv (file_format=> 'WING_DATA_FILE_FORMAT');
+
+DESCRIBE TABLE RAW_WING;
+
+SELECT 
+    $1,
+    $2 AS PART_NUM,
+    $3 AS OP_SEQ,
+    $4 AS TORQUE_VALUE,
+    $5 AS QC_STATUS,
+    $6 AS INGEST_TIME
+FROM @wing_data_stage/wing_data_corrupted.csv (FILE_FORMAT => 'WING_DATA_FILE_FORMAT');
+
+SELECT * 
+FROM TABLE(VALIDATE(RAW_WING, JOB_ID => '_last'));
+
+-- 1. Create a quarantine table (only needs to be done once)
+CREATE or REPLACE TABLE BAD_WING_DATA (
+    ERROR_MESSAGE STRING,
+    ERROR_LINE NUMBER,
+    REJECTED_RECORD STRING,
+    LOAD_TIME TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
+);
+
+
+
+-- 2. Insert the rejected records from your last COPY command
+INSERT INTO BAD_WING_DATA (ERROR_MESSAGE, ERROR_LINE, REJECTED_RECORD)
+SELECT 
+    ERROR, 
+    LINE, 
+    REJECTED_RECORD
+FROM TABLE(VALIDATE(RAW_WING, JOB_ID => '_last'));
+
+
+SELECT * FROM BAD_WING_DATA;
+
+
+INSERT INTO RAW_WING
+VALUES('PLAN-1619', 'RIB-B1', 40, NULL, 'REWORK'),
+        ('PLAN-1729', 'RIB-B3', 20, NULL, 'REWORK'),
+        ('PLAN-1987', 'RIB-B1', 10, NULL, 'REWORK');
+
+
+SELECT * FROM RAW_WING;
+
+
+INSERT ALL
+    WHEN TORQUE_VALUE IS NOT NULL THEN
+        INTO CLEAN_WING (PLAN_ID, PART_NUM, OP_SEQ, TORQUE_VALUE, QC_STATUS)
+        
+    WHEN TORQUE_VALUE IS NULL THEN
+        INTO QUARANTINE_WING (PLAN_ID, PART_NUM, OP_SEQ, TORQUE_VALUE, QC_STATUS)
+
+        SELECT 
+    PLAN_ID, 
+    PART_NUM, 
+    OP_SEQ, 
+    TORQUE_VALUE, 
+    QC_STATUS
+FROM RAW_WING;
+
+
+CREATE TABLE IF NOT EXISTS CLEAN_WING (
+    PLAN_ID VARCHAR,
+    PART_NUM VARCHAR,
+    OP_SEQ NUMBER,
+    TORQUE_VALUE FLOAT,
+    QC_STATUS VARCHAR
+);
+
+-- Ensure you have a quarantine table ready
+CREATE TABLE IF NOT EXISTS QUARANTINE_WING (
+    PLAN_ID VARCHAR,
+    PART_NUM VARCHAR,
+    OP_SEQ NUMBER,
+    TORQUE_VALUE FLOAT,
+    QC_STATUS VARCHAR,
+    ERROR_REASON VARCHAR,
+    QUARANTINE_TIME TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- The conditional routing logic
+INSERT FIRST
+    WHEN TORQUE_VALUE IS NOT NULL THEN
+        INTO CLEAN_WING (PLAN_ID, PART_NUM, OP_SEQ, TORQUE_VALUE, QC_STATUS)
+        VALUES (PLAN_ID, PART_NUM, OP_SEQ, TORQUE_VALUE, QC_STATUS)
+        
+    WHEN TORQUE_VALUE IS NULL THEN
+        INTO QUARANTINE_WING (PLAN_ID, PART_NUM, OP_SEQ, TORQUE_VALUE, QC_STATUS, ERROR_REASON)
+        VALUES (PLAN_ID, PART_NUM, OP_SEQ, TORQUE_VALUE, QC_STATUS, 'Missing Torque Reading')
+
+SELECT 
+    PLAN_ID, 
+    PART_NUM, 
+    OP_SEQ, 
+    TORQUE_VALUE, 
+    QC_STATUS
+FROM RAW_WING;
+
+SELECT COUNT(*) FROM RAW_WING;
+SELECT COUNT(*) FROM CLEAN_WING;
+SELECT COUNT(*) FROM  QUARANTINE_WING;
+

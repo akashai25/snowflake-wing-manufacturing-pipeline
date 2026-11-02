@@ -1,0 +1,37 @@
+# Never commit local credentials or tokens
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*.key
+*credentials*.json
+*secrets*.json
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# IDE and system state
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Locally regenerated root-level CSV copies (committed fixtures live in data/)
+/wing_data_*.csv
+
+# Developer-specific output and exports
+*.log
+logs/
+outputs/
+exports/
+*.zip
+*.bak
+
+# If you download proprietary or account-specific screenshots, keep them out
+private/
+internal/
