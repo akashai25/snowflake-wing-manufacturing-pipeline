@@ -1,10 +1,22 @@
-# Wing Manufacturing Data Pipeline (Learning Project)
+# Wing Manufacturing Data Pipeline
 
 **Python · Snowflake SQL · CSV ingestion · Streams · scheduled Tasks · data validation**
 
-An independent learning project demonstrating how synthetic aircraft-assembly-style records can be generated in Python, staged in Snowflake, inspected for ingestion errors, transformed, and processed incrementally. **All example data in this repository is synthetic**, not Boeing production data.
+An independent Python and Snowflake SQL project using **synthetic manufacturing records** to explore file ingestion, data validation, transformations, and incremental processing. All committed data is synthetic; no employer production data is included.
 
-> **Portfolio scope:** This is a documented collection of independent Snowflake/Python learning exercises, **not** a one-command or production-deployed pipeline. The manual CSV ingestion and data-quality checks below were validated in a separate Snowflake test database on 4 November 2026. The modified Python connector scripts and scheduled Stream/Task/MERGE workflow have **not** been retested together in that sandbox; those components are documented as historical exercises.
+**Project scope:** The repository preserves related, separately developed components—not a single automatically orchestrated application. Manual CSV ingestion and data-quality checks were validated in a Snowflake test database on **4 November 2026**. Earlier scheduled INSERT and MERGE exercises have separate execution-history evidence; the modified repository scripts have **not** been retested together.
+
+## Results at a glance
+
+| Component | Evidence |
+| --- | --- |
+| Sample CSV ingestion | 100 rows loaded into a sandbox `RAW_WING` table |
+| Data quality | 97 distinct `PLAN_ID` values; 3 duplicate extras; 0 null torque values |
+| Status validation | `PASS`, `FAIL`, and `REWORK` accepted; 1 unexpected status (`123`) in the sample |
+| Scheduled Stream/Task INSERT | Earlier Task History: 1 inserted row (September 2026) |
+| Separate scheduled MERGE | Earlier Task History: 3 inserts and 2 updates (September 2026) |
+
+The sample-file validation and historical scheduled Task runs were **separate tests**, not evidence of a fully retested end-to-end automated workflow. Details: [evidence and limitations](docs/EVIDENCE_AND_LIMITATIONS.md).
 
 ## What I worked on
 
@@ -15,7 +27,7 @@ An independent learning project demonstrating how synthetic aircraft-assembly-st
 - Explored SQL transformations and window functions, including `ROW_NUMBER` and `QUALIFY` in separate exercises.
 - Separately tested conditional `INSERT FIRST` logic to route missing-torque rows into a quarantine table. **This worksheet exercise was not integrated into the scheduled Stream/Task workflow.**
 
-## Conceptual data flow
+## Architecture — related components
 
 ```text
 Local Python generator ──> synthetic CSV ──> Snowflake internal stage
@@ -41,7 +53,7 @@ RAW_WING ──> conditional INSERT FIRST ──> CLEAN_WING / QUARANTINE_WING
 Separately: malformed CSV ──> COPY validation and rejected-row diagnostics
 ```
 
-**Architecture qualification:** The diagram summarizes related development components. The preserved files do not contain one standalone Python orchestrator that executes every step in sequence. The successful scheduled INSERT Task consumed a Stream into a clean target; a distinct later scheduled MERGE Task merged `CLEAN_WING` into `CLEAN_WING_T`. The preserved MERGE Task definition does **not** contain `QUALIFY` deduplication.
+**How to read the diagram:** The stages summarize separate development activities. There is no single Python orchestrator that runs them all in sequence. The scheduled INSERT used a Stream; a different scheduled MERGE later read from `CLEAN_WING`. `QUALIFY` was explored separately and is not part of the preserved scheduled MERGE definition.
 
 ## Repository layout
 
@@ -51,7 +63,7 @@ sql/Wing_data_project_lab.sql     Historical SQL worksheet; DO NOT execute from 
 data/                             Synthetic sample CSVs
   wing_data_sample.csv            100 records, 5 fields
   wing_data_corrupted.csv         3 records, including a nonnumeric torque value
-tools/audit_samples.py            New local-only data inspection helper
+tools/audit_samples.py            Local-only sample data inspection
 docs/EXECUTION_GUIDE.md           Safe starting steps, caveats and execution order
 docs/EVIDENCE_AND_LIMITATIONS.md   What is backed by source/history vs. reported tests
 .gitignore                        Keeps local secrets and development outputs out of Git
@@ -79,7 +91,7 @@ requirements.txt                  Python dependencies found in the original conn
    ```
 5. Read [docs/EXECUTION_GUIDE.md](docs/EXECUTION_GUIDE.md) **before** executing any Snowflake statements. Choose a dedicated sandbox database and check which statements write, replace or schedule objects.
 
-For now, do **not** run `Wing_data_project_lab.sql` wholesale. The original Python scripts refer to database `WING_DATA_PROJECT` and role `SYSADMIN`; change these to an isolated environment before using them. Scripts such as `src/wing_task.py` and `src/transform_clean_wing.py` have opt-in safety switches; these modifications have not yet been tested against Snowflake.
+**Safety:** Do **not** run `Wing_data_project_lab.sql` wholesale. The original Python scripts refer to database `WING_DATA_PROJECT` and role `SYSADMIN`; change these to an isolated environment before using them. Scripts such as `src/wing_task.py` and `src/transform_clean_wing.py` have opt-in safety switches; these modifications have not yet been tested against Snowflake.
 
 ## Sample data and local checks
 
@@ -102,22 +114,16 @@ The QC validation rule intentionally accepts `REWORK` as a valid business status
 
 The separately reported worksheet routing test of **111 RAW → 105 CLEAN + 6 QUARANTINE** is **not reproducible from these two included CSV files alone**; no corresponding stored result file is included. A future documentation update should include a self-contained, reproducible test fixture before presenting those numbers as a repository demonstration.
 
-## What has been observed versus what remains
+## Scope, security and limitations
 
-The original account's exported Task History recorded a successful Wing scheduled INSERT (1 inserted row) and a separate MERGE run (3 inserted, 2 updated), in September 2026. Those results were inspected privately but the account export is not included here because it may contain identifiers and account metadata. See [evidence notes](docs/EVIDENCE_AND_LIMITATIONS.md).
+- This is a learning portfolio, **not** a deployed production system, serverless implementation, or measured performance benchmark.
+- The preserved SQL file is a **historical worksheet**, including destructive DDL and Task-control commands. Never execute the entire file. See the [execution guide](docs/EXECUTION_GUIDE.md).
+- Python scripts reference the original development database and role; they must be reviewed and adapted before running against a fresh sandbox. Safety switches added during portfolio preparation have not been live-retested.
+- The separate clean/quarantine routing exercise (reported as 111 RAW → 105 CLEAN + 6 QUARANTINE) does **not** have a corresponding reproducible fixture in this repository.
+- All committed CSV examples are synthetic. Local credentials, private keys, internal employer materials, and account-history exports are intentionally excluded. The `.gitignore` helps prevent accidental inclusion of local credentials.
 
-The project is a learning environment. It is **not** described as production-deployed, serverless, guaranteed idempotent, continuously real-time, enterprise-scale, or benchmarked for cost/performance.
+## Potential enhancements
 
-## Security and responsible publication
-
-- The included records are synthetic. Do not replace them with employer data.
-- Real `.env` files, Snowflake passwords, private keys, account histories, query IDs, and employer internal diagrams are excluded.
-- A `.gitignore` reduces accidental commits but cannot retroactively remove secrets that have already been committed. Inspect GitHub Desktop's **Changes** view before your first commit.
-- No employer branding, proprietary work instructions, drawing numbers, company screenshots, or internal source code should be published.
-
-## Next steps
-
-- Validate the cleaned scripts in a dedicated sandbox, recording reproducible test outputs without private IDs.
-- Separate executable setup/ingestion steps from archived experiments and document a safe execution order.
-- Add a repeatable duplicate-key resolution and MERGE test before claiming end-to-end idempotency.
-- Publish only after completing [the publication checklist](docs/PUBLISH_CHECKLIST.md).
+- Provide one reproducible setup and ingestion workflow for a dedicated sandbox.
+- Add automated data-quality tests and a deterministic duplicate-key resolution strategy.
+- Validate the repository's modified connector scripts and scheduled Tasks together, including a safe MERGE test.
