@@ -18,6 +18,12 @@ This table distinguishes **available source**, **private account-history verific
 | Cost savings, zero downtime, production scale | No formal measurements or operational deployment | Do not claim |
 | End-to-end, automated quarantining, guaranteed idempotence | No one-run orchestrator; quarantine separate; source includes duplicate PLAN_IDs | Describe modular tests and stages precisely |
 
+## Fresh manual sandbox test — 4 November 2026
+
+Using the synthetic `data/wing_data_sample.csv`, a separate Snowflake trial database (`WING_GITHUB_TEST.PUBLIC`) was used to create a RAW table, file format, and internal stage; upload the CSV; run `COPY INTO` validation; load the CSV; and query its data quality. The user shared successful query output showing **100 rows, 97 distinct plan IDs, three duplicate extras, zero null torque values, and 15 statuses outside PASS/FAIL**. After expanding the valid status set to include REWORK, the expected invalid status count is **one** (`123`), matching the committed synthetic CSV. The user confirmed completing the corrected query but did not supply its result table.
+
+These are **manual Snowflake worksheet results**. No fresh execution evidence has been obtained for the Python connector scripts, warehouse-backed Tasks, MERGE or quarantine routing in the new test environment.
+
 ## New edits in this preparation package
 
 To prevent accidental writes while learning Git, the copies of `wing_task.py` and `transform_clean_wing.py` have opt-in safety flags; `raw_wing_stream.py` uses `CREATE STREAM IF NOT EXISTS` rather than `CREATE OR REPLACE`. A new *local-only* CSV-audit helper and new documentation were added. **These changes were syntax-tested locally, not tested against Snowflake.** The user's original archives were not modified.
