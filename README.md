@@ -4,7 +4,7 @@
 
 An independent learning project demonstrating how synthetic aircraft-assembly-style records can be generated in Python, staged in Snowflake, inspected for ingestion errors, transformed, and processed incrementally. **All example data in this repository is synthetic**, not Boeing production data.
 
-> **Portfolio status:** This repository is a *pre-publication, organized version of my original development exercises*. Some code is intentionally modular or exploratory, not a single turnkey production pipeline. The copied scripts include safety edits made during portfolio preparation; they still require a fresh run in a dedicated Snowflake sandbox before being presented as a fully reproducible implementation.
+> **Portfolio scope:** This is a documented collection of independent Snowflake/Python learning exercises, **not** a one-command or production-deployed pipeline. The manual CSV ingestion and data-quality checks below were validated in a separate Snowflake test database on 4 November 2026. The modified Python connector scripts and scheduled Stream/Task/MERGE workflow have **not** been retested together in that sandbox; those components are documented as historical exercises.
 
 ## What I worked on
 
@@ -84,6 +84,21 @@ For now, do **not** run `Wing_data_project_lab.sql` wholesale. The original Pyth
 ## Sample data and local checks
 
 The supplied `wing_data_sample.csv` has **100 rows and 97 distinct `PLAN_ID` values** (three keys repeat). One `QC_STATUS` value is `123`, unlike the other status strings. The supplied `wing_data_corrupted.csv` has three rows, one with `TORQUE_VALUE=ERR` to test numeric-load errors. These are useful teaching inputs, not production telemetry.
+
+### Independent manual validation — 4 November 2026
+
+In a separate Snowflake trial-account sandbox (`WING_GITHUB_TEST.PUBLIC`), the sample file was uploaded to an internal stage and checked with `COPY INTO ... VALIDATION_MODE = RETURN_ERRORS` (no load errors returned), then loaded into an empty `RAW_WING` table. The subsequent read-only SQL analysis observed:
+
+| Check | Observed result |
+| --- | ---: |
+| Rows loaded | 100 |
+| Distinct `PLAN_ID` values | 97 |
+| Duplicate records beyond one per ID | 3 |
+| Missing torque values | 0 |
+| QC status `PASS` / `FAIL` / `REWORK` | 57 / 28 / 14 |
+| Unexpected QC status `123` | 1 |
+
+The QC validation rule intentionally accepts `REWORK` as a valid business status. This is **manual ingestion and validation only**: it does not establish that the Python staging scripts, Stream/Task automation, scheduled MERGE, or separate quarantine experiment ran end-to-end in the new test database. No private Snowflake account exports, query IDs, or screenshots are committed.
 
 The separately reported worksheet routing test of **111 RAW → 105 CLEAN + 6 QUARANTINE** is **not reproducible from these two included CSV files alone**; no corresponding stored result file is included. A future documentation update should include a self-contained, reproducible test fixture before presenting those numbers as a repository demonstration.
 
