@@ -1,29 +1,21 @@
-# Evidence and limitations
+# Wing Pipeline — Technical Notes
 
-This table distinguishes **available source**, **private account-history verification**, **user-reported experiments**, and **new preparation edits**. It does not convert separate exercises into a production deployment.
+This project uses synthetic manufacturing-style CSV data to practice Python and Snowflake ingestion, data checks, and incremental processing.
 
-| Claim | What is actually available | Accurate public wording |
-|---|---|---|
-| Python data generation | `src/generate_csv.py` and synthetic CSV | Generated synthetic Wing records with Python |
-| Python staging | `corrupted_csv_into_stage.py` executes PUT; original `connection.py` has commented PUT/COPY | Used Connector/Python to stage test files; no single complete Python runner preserved |
-| Internal stages / COPY | Historical SQL; private execution history | Practiced stage-based ingestion and CSV loading |
-| RAW Stream and scheduled Task | Python/SQL definitions; private Task History | Tested warehouse-backed Stream/Task incremental processing |
-| Successful scheduled insert | Private exported Task History: 2026-09-17, 1 row inserted | Verified one successful scheduled INSERT run |
-| Successful scheduled MERGE | Private exported Task History: 2026-09-30, 3 inserted and 2 updated | Verified one successful scheduled MERGE test |
-| MERGE with QUALIFY | `QUALIFY` and MERGE separately present in saved SQL; no QUALIFY in verified scheduled MERGE | Practiced separate deduplication queries; do not attribute them to successful Task MERGE |
-| 111 / 105 / 6 routing outcome | Self-reported Snowsight test; exact output not preserved | Separately tested clean/quarantine routing; counts are unverified by supplied artifacts |
-| Malformed-file errors | Synthetic ERR numeric input, COPY validation / VALIDATE SQL | Tested invalid numeric and CSV load diagnostics |
-| Task orchestration | Task SQL uses `WAREHOUSE='COMPUTE_WH'`, interval schedules | Warehouse-backed scheduled Tasks; **not** serverless or CRON |
-| Transient staging | Original Python creates CLEAN_WING_T with `CREATE OR REPLACE TABLE`, no TRANSIENT | Do not call CLEAN_WING_T a verified transient table |
-| Cost savings, zero downtime, production scale | No formal measurements or operational deployment | Do not claim |
-| End-to-end, automated quarantining, guaranteed idempotence | No one-run orchestrator; quarantine separate; source includes duplicate PLAN_IDs | Describe modular tests and stages precisely |
+## What was tested
 
-## Fresh manual sandbox test — 4 November 2026
+- In a separate Snowflake test database, I uploaded the included sample CSV to an internal stage, validated the load with `COPY INTO ... VALIDATION_MODE = RETURN_ERRORS`, and loaded 100 records into `RAW_WING`.
+- The sample contains 97 distinct `PLAN_ID` values and three additional rows with repeated IDs. There are no missing torque values. `PASS`, `FAIL`, and `REWORK` are accepted QC statuses; one record contains an unexpected status (`123`).
+- Earlier exercises included a successful scheduled Stream/Task INSERT and a separate scheduled MERGE. These were tested at different times and were not rerun together in the current repository version.
+- I separately practiced malformed-CSV load diagnostics and clean/quarantine routing.
 
-Using the synthetic `data/wing_data_sample.csv`, a separate Snowflake trial database (`WING_GITHUB_TEST.PUBLIC`) was used to create a RAW table, file format, and internal stage; upload the CSV; run `COPY INTO` validation; load the CSV; and query its data quality. The user shared successful query output showing **100 rows, 97 distinct plan IDs, three duplicate extras, zero null torque values, and 15 statuses outside PASS/FAIL**. After expanding the valid status set to include REWORK, the expected invalid status count is **one** (`123`), matching the committed synthetic CSV. The user confirmed completing the corrected query but did not supply its result table.
+## Current limitations
 
-These are **manual Snowflake worksheet results**. No fresh execution evidence has been obtained for the Python connector scripts, warehouse-backed Tasks, MERGE or quarantine routing in the new test environment.
+- The files represent related exercises, not a single end-to-end Python orchestrator.
+- The modified connector scripts and Task safety guards have not been live-retested together.
+- The historical SQL worksheet includes `CREATE OR REPLACE`, data changes, and Task resume commands. **Do not run the worksheet from top to bottom.**
+- Some Python scripts use the original database and role names and need adapting before execution in another Snowflake account.
+- The `QUALIFY` deduplication example is separate from the preserved scheduled MERGE. The included CSV has repeated `PLAN_ID` values, so key-handling must be considered before using MERGE.
+- Clean/quarantine routing was a separate worksheet test; the included sample files do not reproduce the previously tested routing totals.
 
-## New edits in this preparation package
-
-To prevent accidental writes while learning Git, the copies of `wing_task.py` and `transform_clean_wing.py` have opt-in safety flags; `raw_wing_stream.py` uses `CREATE STREAM IF NOT EXISTS` rather than `CREATE OR REPLACE`. A new *local-only* CSV-audit helper and new documentation were added. **These changes were syntax-tested locally, not tested against Snowflake.** The user's original archives were not modified.
+All committed CSV samples are synthetic. Credentials and employer data are not included. Use an isolated Snowflake database and review statements that create, replace, or schedule objects.
